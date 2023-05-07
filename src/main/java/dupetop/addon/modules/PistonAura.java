@@ -1,7 +1,7 @@
 package dupetop.addon.modules;
 
-import dupetop.addon.Addon;
-import dupetop.addon.utils.TimerUtils;
+import dupetop.addon.Main;
+import dupetop.addon.utils.Utils;
 import meteordevelopment.meteorclient.events.entity.EntityAddedEvent;
 import meteordevelopment.meteorclient.events.entity.EntityRemovedEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
@@ -35,7 +35,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.function.Predicate;
 
-import static dupetop.addon.utils.TimerUtils.closestVec3d;
+import static dupetop.addon.utils.Utils.closestVec3d;
 import static meteordevelopment.meteorclient.utils.player.InvUtils.findFastestTool;
 import static meteordevelopment.meteorclient.utils.player.InvUtils.findInHotbar;
 import static meteordevelopment.meteorclient.utils.player.PlayerUtils.distanceTo;
@@ -71,7 +71,7 @@ public class PistonAura extends Module {
 
 
     public PistonAura() {
-        super(Addon.CATEGORY, "piston-aura", "Automatically pushing crystals into enemy by piston.");
+        super(Main.CATEGORY, "piston-aura", "Automatically pushing crystals into enemy by piston.");
         get = this;
     }
 
@@ -84,7 +84,7 @@ public class PistonAura extends Module {
 
     private Stage stage;
 
-    private final TimerUtils timer = new TimerUtils();
+    private final Utils timer = new Utils();
     private Positions.Triplet stacked = null;
 
     @Override

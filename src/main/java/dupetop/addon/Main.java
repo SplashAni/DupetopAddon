@@ -8,15 +8,15 @@ import meteordevelopment.meteorclient.systems.modules.Category;
 import meteordevelopment.meteorclient.systems.modules.Modules;
 import org.slf4j.Logger;
 
-public class Addon extends MeteorAddon {
+public class Main extends MeteorAddon {
     public static final Logger LOG = LogUtils.getLogger();
     public static final Category CATEGORY = new Category("Bypass");
 
     @Override
     public void onInitialize() {
-        LOG.info("Initializing Meteor Addon Template");
+        LOG.info("Loading DupetopAddon");
 
-        // Modules
+
         Modules.get().add(new PistonPush());
         Modules.get().add(new PistonAura());
 
@@ -29,6 +29,6 @@ public class Addon extends MeteorAddon {
 
     @Override
     public String getPackage() {
-        return "blitz.dev";
+        return "dupetop.addon";
     }
 }

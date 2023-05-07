@@ -14,7 +14,7 @@
   "environment": "client",
   "entrypoints": {
     "meteor": [
-      "dupetop.addon.Addon"
+      "dupetop.addon.Main"
     ]
   },
   "mixins": [

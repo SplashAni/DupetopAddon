@@ -1,6 +1,6 @@
 package dupetop.addon.modules;
 
-import dupetop.addon.Addon;
+import dupetop.addon.Main;
 import meteordevelopment.meteorclient.events.world.TickEvent;
 import meteordevelopment.meteorclient.settings.BoolSetting;
 import meteordevelopment.meteorclient.settings.DoubleSetting;
@@ -25,6 +25,7 @@ import net.minecraft.util.math.Vec3d;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.Objects;
 
 import static java.util.Objects.isNull;
 import static meteordevelopment.meteorclient.utils.entity.TargetUtils.getPlayerTarget;
@@ -35,25 +36,29 @@ import static meteordevelopment.meteorclient.utils.world.BlockUtils.canPlace;
 
 public class PistonPush extends Module {
     private final SettingGroup sgGeneral = settings.getDefaultGroup();
-    private final SettingGroup sgRender = settings.createGroup("Render");
+    private final SettingGroup sgPause = settings.createGroup("Pause");
 
     private final Setting<Double> targetRange = sgGeneral.add(new DoubleSetting.Builder().name("target-range").description("Range in which to target players.").defaultValue(6).sliderRange(0, 10).build());
     private final Setting<Double> placeRange = sgGeneral.add(new DoubleSetting.Builder().name("place-range").description("Range in which to place blocks.").defaultValue(4.6).sliderRange(0, 7).build());
     private final Setting<Boolean> packetPlace = sgGeneral.add(new BoolSetting.Builder().name("packet").description("Using packet interaction instead of client.").defaultValue(false).build());
-    private final Setting<Boolean> antiSelf = sgGeneral.add(new BoolSetting.Builder().name("anti-self").description("Doesn't place if you can push yourself.").defaultValue(false).build());
     private final Setting<Boolean> reverse = sgGeneral.add(new BoolSetting.Builder().name("reverse").description("Placing redstone block and then placing piston.").defaultValue(false).build());
     private final Setting<Boolean> holeFill = sgGeneral.add(new BoolSetting.Builder().name("hole-fill").description("Places obsidian inside of the target block.").defaultValue(true).build());
     private final Setting<Boolean> swapBack = sgGeneral.add(new BoolSetting.Builder().name("swap-back").description("Automatically swaps to previous slot.").defaultValue(true).build());
     private final Setting<Boolean> zeroTick = sgGeneral.add(new BoolSetting.Builder().name("zero-tick").description("Places all blocks in one tick.").defaultValue(true).build());
-    private final Setting<Boolean> eatPause = sgGeneral.add(new BoolSetting.Builder().name("pause-on-eat").description("Pauses if player is eating.").defaultValue(true).build());
 
-    private final Setting<Boolean> packetSwing = sgRender.add(new BoolSetting.Builder().name("packet-swing").description("Swings with packets.").defaultValue(false).build());
+    // PAUSE
+    private final Setting<Boolean> eatPause = sgPause.add(new BoolSetting.Builder().name("pause-on-eat").description("Pauses if player is eating.").defaultValue(true).build());
+
+    private final Setting<Boolean> drinkPause = sgPause.add(new BoolSetting.Builder().name("pause-on-drink").description("Pauses if drinking.").defaultValue(true).build());
+    private final Setting<Boolean> placePause = sgPause.add(new BoolSetting.Builder().name("place-on-pause").description("Pauses if placing.").defaultValue(true).build());
 
     public PistonPush() {
-        super(Addon.CATEGORY, "piston-push", "Pushing P.");
+        super(Main.CATEGORY, "piston-push", "Pushing P.");
     }
 
-    private BlockPos pistonPos, activatorPos, obsidianPos, targetPos;
+    private BlockPos pistonPos;
+    private BlockPos activatorPos;
+    private BlockPos obsidianPos;
     private Direction direction;
 
     private PlayerEntity target;
@@ -76,24 +81,25 @@ public class PistonPush extends Module {
     public void onTick(TickEvent.Post event) {
         target = getPlayerTarget(targetRange.get(), SortPriority.LowestDistance);
         if (isBadTarget(target, targetRange.get())) {
-            info("Target is null.");
+            info("Target not found.");
             toggle();
             return;
         }
 
         if (!findInHotbar(Items.PISTON, Items.STICKY_PISTON).found() || !findInHotbar(Items.REDSTONE_BLOCK).found()) {
-            info("Required items not found.");
+            info("Items not found");
             toggle();
             return;
         }
 
-        if (eatPause.get() && PlayerUtils.shouldPause(false, true, true)) return;
+        if (eatPause.get() && PlayerUtils.shouldPause(placePause.get(), eatPause.get(), drinkPause.get())) return;
 
         switch (stage) {
             case Preparing -> {
+                assert mc.player != null;
                 prevSlot = mc.player.getInventory().selectedSlot;
 
-                targetPos = getBlockPos(target).up();
+                BlockPos targetPos = getBlockPos(target).up();
                 pistonPos = getPistonPos(targetPos);
                 activatorPos = getRedstonePos(pistonPos);
                 obsidianPos = targetPos.down();
@@ -142,13 +148,16 @@ public class PistonPush extends Module {
     }
 
     private int getYaw(Direction direction) {
-        if (direction == null) return (int) mc.player.getYaw();
+        if (direction == null) {
+            assert mc.player != null;
+            return (int) mc.player.getYaw();
+        }
         return switch (direction) {
             case NORTH -> 180;
             case SOUTH -> 0;
             case WEST -> 90;
             case EAST -> -90;
-            default -> throw new IllegalStateException("Unexpected value: " + direction);
+            default -> 90;
         };
     }
 
@@ -158,7 +167,7 @@ public class PistonPush extends Module {
             case SOUTH -> Direction.NORTH;
             case WEST -> Direction.EAST;
             case EAST -> Direction.WEST;
-            default -> throw new IllegalStateException("Unexpected value: " + direction);
+            default -> Direction.DOWN;
         };
     }
 
@@ -227,6 +236,7 @@ public class PistonPush extends Module {
 
     private Vec3d closestVec3d(BlockPos blockpos) {
         if (blockpos == null) return new Vec3d(0.0, 0.0, 0.0);
+        assert mc.player != null;
         double x = MathHelper.clamp((mc.player.getX() - blockpos.getX()), 0.0, 1.0);
         double y = MathHelper.clamp((mc.player.getY() - blockpos.getY()), 0.0, 0.6);
         double z = MathHelper.clamp((mc.player.getZ() - blockpos.getZ()), 0.0, 1.0);
@@ -257,13 +267,12 @@ public class PistonPush extends Module {
     public void updateSlot(FindItemResult result, boolean packet) {
         updateSlot(result.slot(), packet);
     }
-    public boolean updateSlot(int slot, boolean packet) {
-        if (slot < 0 || slot > 8) return false;
+    public void updateSlot(int slot, boolean packet) {
+        if (slot < 0 || slot > 8) return;
         if (prevSlot == -1) prevSlot = mc.player.getInventory().selectedSlot;
 
-        // updates slot on client and server side
+        assert mc.player != null;
         mc.player.getInventory().selectedSlot = slot;
-        if (packet) mc.getNetworkHandler().sendPacket(new UpdateSelectedSlotC2SPacket(slot));
-        return true;
+        if (packet) Objects.requireNonNull(mc.getNetworkHandler()).sendPacket(new UpdateSelectedSlotC2SPacket(slot));
     }
 }

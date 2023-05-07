@@ -6,10 +6,10 @@ import net.minecraft.util.math.Vec3d;
 
 import static meteordevelopment.meteorclient.MeteorClient.mc;
 
-public class TimerUtils {
+public class Utils {
     private long time = -1L;
 
-    public TimerUtils reset() {
+    public Utils reset() {
         this.time = System.nanoTime();
         return this;
     }
