@@ -2,10 +2,7 @@ package dupetop.addon.modules;
 
 import dupetop.addon.Main;
 import meteordevelopment.meteorclient.events.world.TickEvent;
-import meteordevelopment.meteorclient.settings.BoolSetting;
-import meteordevelopment.meteorclient.settings.DoubleSetting;
-import meteordevelopment.meteorclient.settings.Setting;
-import meteordevelopment.meteorclient.settings.SettingGroup;
+import meteordevelopment.meteorclient.settings.*;
 import meteordevelopment.meteorclient.systems.modules.Module;
 import meteordevelopment.meteorclient.utils.entity.SortPriority;
 import meteordevelopment.meteorclient.utils.player.FindItemResult;
@@ -22,11 +19,13 @@ import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
+import oshi.jna.platform.mac.SystemB;
 
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Objects;
 
+import static dupetop.addon.utils.Utils.*;
 import static java.util.Objects.isNull;
 import static meteordevelopment.meteorclient.utils.entity.TargetUtils.getPlayerTarget;
 import static meteordevelopment.meteorclient.utils.entity.TargetUtils.isBadTarget;
@@ -40,38 +39,55 @@ public class PistonPush extends Module {
 
     private final Setting<Double> targetRange = sgGeneral.add(new DoubleSetting.Builder().name("target-range").description("Range in which to target players.").defaultValue(6).sliderRange(0, 10).build());
     private final Setting<Double> placeRange = sgGeneral.add(new DoubleSetting.Builder().name("place-range").description("Range in which to place blocks.").defaultValue(4.6).sliderRange(0, 7).build());
+    private final Setting<Prioity> prio = sgGeneral.add(new EnumSetting.Builder<Prioity>()
+            .name("priority-distance")
+            .description("Which target to prioritize")
+            .defaultValue(Prioity.Closest)
+            .build()
+    );
     private final Setting<Boolean> packetPlace = sgGeneral.add(new BoolSetting.Builder().name("packet").description("Using packet interaction instead of client.").defaultValue(false).build());
-    private final Setting<Boolean> reverse = sgGeneral.add(new BoolSetting.Builder().name("reverse").description("Placing redstone block and then placing piston.").defaultValue(false).build());
-    private final Setting<Boolean> holeFill = sgGeneral.add(new BoolSetting.Builder().name("hole-fill").description("Places obsidian inside of the target block.").defaultValue(true).build());
+
+    private final Setting<Order> order = sgGeneral.add(new EnumSetting.Builder<Order>()
+            .name("place-order")
+            .description("The order to place blocks.")
+            .defaultValue(Order.Piston)
+            .build()
+    );
+
+    //  soon tm  private final Setting<Boolean> holeFill = sgGeneral.add(new BoolSetting.Builder().name("hole-fill").description("Places obsidian inside of the target block.").defaultValue(true).build());
     private final Setting<Boolean> swapBack = sgGeneral.add(new BoolSetting.Builder().name("swap-back").description("Automatically swaps to previous slot.").defaultValue(true).build());
     private final Setting<Boolean> zeroTick = sgGeneral.add(new BoolSetting.Builder().name("zero-tick").description("Places all blocks in one tick.").defaultValue(true).build());
 
     // PAUSE
-    private final Setting<Boolean> eatPause = sgPause.add(new BoolSetting.Builder().name("pause-on-eat").description("Pauses if player is eating.").defaultValue(true).build());
+    private final Setting<Boolean> pause = sgPause.add(new BoolSetting.Builder().name("pause").description("").defaultValue(true).build());
 
-    private final Setting<Boolean> drinkPause = sgPause.add(new BoolSetting.Builder().name("pause-on-drink").description("Pauses if drinking.").defaultValue(true).build());
-    private final Setting<Boolean> placePause = sgPause.add(new BoolSetting.Builder().name("place-on-pause").description("Pauses if placing.").defaultValue(true).build());
+    private final Setting<Boolean> eatPause = sgPause.add(new BoolSetting.Builder().name("pause-on-eat").description("Pauses if player is eating.").defaultValue(true).visible(pause::get).build());
+
+    private final Setting<Boolean> drinkPause = sgPause.add(new BoolSetting.Builder().name("pause-on-drink").description("Pauses if drinking.").defaultValue(false).visible(pause::get).build());
+    private final Setting<Boolean> placePause = sgPause.add(new BoolSetting.Builder().name("place-on-pause").description("Pauses if placing.").defaultValue(false).visible(pause::get).build());
 
     public PistonPush() {
-        super(Main.CATEGORY, "piston-push", "Pushing P.");
+        super(Main.CATEGORY, "piston-push", "Pushes players out of holes");
     }
 
     private BlockPos pistonPos;
     private BlockPos activatorPos;
-    private BlockPos obsidianPos;
     private Direction direction;
 
     private PlayerEntity target;
     private Stage stage;
-
-    private static int prevSlot;
+    public static int prevSlot;
+    public enum Order {
+        Redstone, Piston
+    }
+    public enum Prioity {
+        Closest,Furthest,HighestHealth,LowestHealth
+    }
 
     @Override
     public void onActivate() {
         pistonPos = null;
         activatorPos = null;
-        obsidianPos = null;
-
         direction = null;
 
         stage = Stage.Preparing;
@@ -79,9 +95,9 @@ public class PistonPush extends Module {
 
     @EventHandler
     public void onTick(TickEvent.Post event) {
-        target = getPlayerTarget(targetRange.get(), SortPriority.LowestDistance);
+        target = getPlayerTarget(targetRange.get(), sort()); // OLD BT DEVS DIDNT GET THISI RIGHT :sKUL:
         if (isBadTarget(target, targetRange.get())) {
-            info("Target not found.");
+            info("No nearby targets");
             toggle();
             return;
         }
@@ -92,7 +108,7 @@ public class PistonPush extends Module {
             return;
         }
 
-        if (eatPause.get() && PlayerUtils.shouldPause(placePause.get(), eatPause.get(), drinkPause.get())) return;
+        if (pause.get() && PlayerUtils.shouldPause(placePause.get(), eatPause.get(), drinkPause.get())) return;
 
         switch (stage) {
             case Preparing -> {
@@ -102,28 +118,20 @@ public class PistonPush extends Module {
                 BlockPos targetPos = getBlockPos(target).up();
                 pistonPos = getPistonPos(targetPos);
                 activatorPos = getRedstonePos(pistonPos);
-                obsidianPos = targetPos.down();
 
-                if (hasNull(targetPos, pistonPos, activatorPos, obsidianPos)) stage = Stage.Toggle;
-                if (hasFar(targetPos, pistonPos, activatorPos, obsidianPos)) stage = Stage.Toggle;
+                if (hasNull(targetPos, pistonPos, activatorPos)) stage = Stage.Toggle;
+                if (hasFar(targetPos, pistonPos, activatorPos)) stage = Stage.Toggle;
 
 
-                stage = zeroTick.get() ? Stage.ZeroTick : (reverse.get() ? Stage.Redstone : Stage.Piston);
+                stage = zeroTick.get() ? Stage.ZeroTick : (placeOrder() ? Stage.Redstone : Stage.Piston);
             }
             case Piston -> {
                 doPlace(findInHotbar(Items.PISTON, Items.STICKY_PISTON), pistonPos);
-                stage = reverse.get() ? Stage.Obsidian : Stage.Redstone;
+                stage = Stage.Redstone;
             }
             case Redstone -> {
                 doPlace(findInHotbar(Items.REDSTONE_BLOCK), activatorPos);
-                stage = reverse.get() ? Stage.Piston : Stage.Obsidian;
-            }
-            case Obsidian -> {
-                if (holeFill.get() && findInHotbar(Items.OBSIDIAN).found()) {
-                    doPlace(findInHotbar(Items.OBSIDIAN), obsidianPos);
-                }
-
-                stage = Stage.Toggle;
+                stage = Stage.Piston;
             }
             case ZeroTick -> {
                 doPlace(findInHotbar(Items.PISTON, Items.STICKY_PISTON), pistonPos);
@@ -131,7 +139,10 @@ public class PistonPush extends Module {
                 stage = Stage.Toggle;
             }
             case Toggle -> {
-                if (swapBack.get()) mc.player.getInventory().selectedSlot = prevSlot;
+                if (swapBack.get()) {
+                    assert mc.player != null;
+                    mc.player.getInventory().selectedSlot = prevSlot;
+                }
                 toggle();
             }
         }
@@ -249,30 +260,26 @@ public class PistonPush extends Module {
     }
 
     public enum Stage {
-        Preparing, Piston, Redstone, Obsidian, ZeroTick, Toggle
+        Preparing, Piston, Redstone, ZeroTick, Toggle
     }
 
-    public static BlockPos getBlockPos(PlayerEntity entity) {
-        return entity.getBlockPos();
+    private boolean placeOrder(){
+        if(order.get().equals(Order.Redstone)){
+            return true;
+        }
+        return false;
     }
-
-    public boolean isAir(BlockPos block) {
-        return mc.world.getBlockState(block).isAir();
-    }
-
-    public void placeBlock(Hand hand, BlockHitResult result, boolean packetPlace) {
-        if (packetPlace) mc.getNetworkHandler().sendPacket(new PlayerInteractBlockC2SPacket(hand, result,1));
-        else mc.interactionManager.interactBlock(mc.player, hand, result);
-    }
-    public void updateSlot(FindItemResult result, boolean packet) {
-        updateSlot(result.slot(), packet);
-    }
-    public void updateSlot(int slot, boolean packet) {
-        if (slot < 0 || slot > 8) return;
-        if (prevSlot == -1) prevSlot = mc.player.getInventory().selectedSlot;
-
-        assert mc.player != null;
-        mc.player.getInventory().selectedSlot = slot;
-        if (packet) Objects.requireNonNull(mc.getNetworkHandler()).sendPacket(new UpdateSelectedSlotC2SPacket(slot));
+    private SortPriority sort() {
+        switch (prio.get()) {
+            case Closest:
+                return SortPriority.LowestDistance;
+            case Furthest:
+                return SortPriority.HighestDistance;
+            case HighestHealth:
+                return SortPriority.HighestHealth;
+            case LowestHealth:
+                return SortPriority.LowestHealth;
+        }
+        return SortPriority.LowestDistance;
     }
 }
