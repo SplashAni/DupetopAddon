@@ -36,6 +36,7 @@ import java.util.List;
 import java.util.function.Predicate;
 
 import static dupetop.addon.utils.Utils.closestVec3d;
+import static dupetop.addon.utils.Utils.getYaw;
 import static meteordevelopment.meteorclient.utils.player.InvUtils.findFastestTool;
 import static meteordevelopment.meteorclient.utils.player.InvUtils.findInHotbar;
 import static meteordevelopment.meteorclient.utils.player.PlayerUtils.distanceTo;
@@ -244,17 +245,6 @@ public class PistonAura extends Module {
         Rotations.rotate(strictDirection.get() ? mc.player.getYaw() : getYaw(this.direction), 0);
     }
 
-    private int getYaw(Direction direction) {
-        if (direction == null) return (int) mc.player.getYaw();
-
-        return switch (direction) {
-            case NORTH -> 180;
-            case SOUTH -> 0;
-            case WEST -> 90;
-            case EAST -> -90;
-            default -> throw new IllegalStateException("Unexpected value: " + direction);
-        };
-    }
 
     private void doCheck() {
         if (!findInHotbar(Items.END_CRYSTAL).found() || !findInHotbar(Items.PISTON, Items.STICKY_PISTON).found() || !findInHotbar(Items.REDSTONE_BLOCK).found() || !findInHotbar(Items.NETHERITE_PICKAXE, Items.DIAMOND_PICKAXE).found()) {
@@ -387,30 +377,7 @@ public class PistonAura extends Module {
 
         }
     }
-    public static BlockPos getBlockPos(PlayerEntity entity) {
-        return entity.getBlockPos();
-    }
 
-    public boolean isAir(BlockPos block) {
-        return mc.world.getBlockState(block).isAir();
-    }
-
-    public void placeBlock(Hand hand, BlockHitResult result, boolean packetPlace) {
-        if (packetPlace) mc.getNetworkHandler().sendPacket(new PlayerInteractBlockC2SPacket(hand, result,1));
-        else mc.interactionManager.interactBlock(mc.player, hand, result);
-    }
-    public void updateSlot(FindItemResult result, boolean packet) {
-        updateSlot(result.slot(), packet);
-    }
-    public boolean updateSlot(int slot, boolean packet) {
-        if (slot < 0 || slot > 8) return false;
-        if (prevSlot == -1) prevSlot = mc.player.getInventory().selectedSlot;
-
-        // updates slot on client and server side
-        mc.player.getInventory().selectedSlot = slot;
-        if (packet) mc.getNetworkHandler().sendPacket(new UpdateSelectedSlotC2SPacket(slot));
-        return true;
-    }
     public static boolean hasEntity(Box box) {
         return hasEntity(box, entity -> entity instanceof PlayerEntity || entity instanceof EndCrystalEntity || entity instanceof TntEntity);
     }
