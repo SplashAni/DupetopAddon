@@ -11,19 +11,15 @@ import meteordevelopment.meteorclient.utils.player.Rotations;
 import meteordevelopment.orbit.EventHandler;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.Items;
-import net.minecraft.network.packet.c2s.play.PlayerInteractBlockC2SPacket;
-import net.minecraft.network.packet.c2s.play.UpdateSelectedSlotC2SPacket;
 import net.minecraft.util.Hand;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
-import oshi.jna.platform.mac.SystemB;
 
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.Objects;
 
 import static dupetop.addon.utils.Utils.*;
 import static java.util.Objects.isNull;
@@ -56,7 +52,7 @@ public class PistonPush extends Module {
 
     //  soon tm  private final Setting<Boolean> holeFill = sgGeneral.add(new BoolSetting.Builder().name("hole-fill").description("Places obsidian inside of the target block.").defaultValue(true).build());
     private final Setting<Boolean> swapBack = sgGeneral.add(new BoolSetting.Builder().name("swap-back").description("Automatically swaps to previous slot.").defaultValue(true).build());
-    private final Setting<Boolean> zeroTick = sgGeneral.add(new BoolSetting.Builder().name("zero-tick").description("Places all blocks in one tick.").defaultValue(true).build());
+    private final Setting<Boolean> instant = sgGeneral.add(new BoolSetting.Builder().name("instant").description("Places all blocks in one tick.").defaultValue(true).build());
 
     // PAUSE
     private final Setting<Boolean> pause = sgPause.add(new BoolSetting.Builder().name("pause").description("").defaultValue(true).build());
@@ -71,7 +67,7 @@ public class PistonPush extends Module {
     }
 
     private BlockPos pistonPos;
-    private BlockPos activatorPos;
+    private BlockPos redstonePos;
     private Direction direction;
 
     private PlayerEntity target;
@@ -87,7 +83,7 @@ public class PistonPush extends Module {
     @Override
     public void onActivate() {
         pistonPos = null;
-        activatorPos = null;
+        redstonePos = null;
         direction = null;
 
         stage = Stage.Preparing;
@@ -95,15 +91,15 @@ public class PistonPush extends Module {
 
     @EventHandler
     public void onTick(TickEvent.Post event) {
-        target = getPlayerTarget(targetRange.get(), sort()); // OLD BT DEVS DIDNT GET THISI RIGHT :sKUL:
+        target = getPlayerTarget(targetRange.get(), sort());
         if (isBadTarget(target, targetRange.get())) {
-            info("No nearby targets");
+            info("No targets found toggling...");
             toggle();
             return;
         }
 
         if (!findInHotbar(Items.PISTON, Items.STICKY_PISTON).found() || !findInHotbar(Items.REDSTONE_BLOCK).found()) {
-            info("Items not found");
+            info("Items not found togging...");
             toggle();
             return;
         }
@@ -117,25 +113,25 @@ public class PistonPush extends Module {
 
                 BlockPos targetPos = getBlockPos(target).up();
                 pistonPos = getPistonPos(targetPos);
-                activatorPos = getRedstonePos(pistonPos);
+                redstonePos = getRedstonePos(pistonPos);
 
-                if (hasNull(targetPos, pistonPos, activatorPos)) stage = Stage.Toggle;
-                if (hasFar(targetPos, pistonPos, activatorPos)) stage = Stage.Toggle;
+                if (hasNull(targetPos, pistonPos, redstonePos)) stage = Stage.Toggle;
+                if (hasFar(targetPos, pistonPos, redstonePos)) stage = Stage.Toggle;
 
 
-                stage = zeroTick.get() ? Stage.ZeroTick : (placeOrder() ? Stage.Redstone : Stage.Piston);
+                stage = instant.get() ? Stage.ZeroTick : (placeOrder() ? Stage.Redstone : Stage.Piston);
             }
             case Piston -> {
                 doPlace(findInHotbar(Items.PISTON, Items.STICKY_PISTON), pistonPos);
                 stage = Stage.Redstone;
             }
             case Redstone -> {
-                doPlace(findInHotbar(Items.REDSTONE_BLOCK), activatorPos);
+                doPlace(findInHotbar(Items.REDSTONE_BLOCK), redstonePos);
                 stage = Stage.Piston;
             }
             case ZeroTick -> {
                 doPlace(findInHotbar(Items.PISTON, Items.STICKY_PISTON), pistonPos);
-                doPlace(findInHotbar(Items.REDSTONE_BLOCK), activatorPos);
+                doPlace(findInHotbar(Items.REDSTONE_BLOCK), redstonePos);
                 stage = Stage.Toggle;
             }
             case Toggle -> {
